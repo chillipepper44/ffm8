@@ -11,7 +11,7 @@ def index():
         file = request.files.get('manifest')
         if file:
             result = parse_manifest_to_ffm8(file)
-    return render_template('index.html', result=result)
+    return render_template('index.html', output=result)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

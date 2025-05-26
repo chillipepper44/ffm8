@@ -1,36 +1,52 @@
-# ffm_parser.py
+import fitz  # PyMuPDF
 
-import pdfplumber
+def parse_manifest_to_ffm8(pdf_file):
+    ffm_lines = ["FFM/8"]
+    current_uld = None
+    lines = []
 
-def parse_manifest_to_ffm8(pdf_path):
-    ffm_lines = []
-    bulk_entries = []
-    uld_entries = []
+    with fitz.open(stream=pdf_file.read(), filetype="pdf") as doc:
+        for page in doc:
+            text = page.get_text()
+            blocks = text.split("\n")
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            table = page.extract_table()
-            if not table:
-                continue
-            for row in table[1:]:  # Skip header
-                if len(row) < 6:
+            buffer = []
+            for line in blocks:
+                if line.strip() == "":
                     continue
-                awb, pcs, weight, dest, flight, uld = [cell.strip() if cell else '' for cell in row[:6]]
+                buffer.append(line.strip())
 
-                if not awb or not pcs or not weight:
-                    continue
+                # เมื่อสะสมครบ 6 บรรทัด (ตัวอย่างคร่าว ๆ)
+                if len(buffer) >= 6 and any(" - " in b for b in buffer):
+                    awb_line = buffer.pop(0)
+                    piece_line = buffer.pop(0)
+                    weight_line = buffer.pop(0)
+                    desc_line = buffer.pop(0)
+                    shc_line = buffer.pop(0)
+                    route_line = buffer.pop(0)
 
-                line = f"{awb} {pcs}K {weight}K {dest}"
+                    # ตัดแต่งข้อมูล
+                    awb = awb_line.replace(" ", "").strip()
+                    pieces = piece_line.split("/")[0]
+                    piece_type = "P" if "/" in piece_line else "T"
+                    weight = weight_line.split("/")[0].strip()
+                    mc = round(float(weight) * 0.006, 2)
+                    description = f"{desc_line.strip()} {shc_line.strip()}".strip()
+                    route = route_line.replace(" ", "").replace("-", "").strip()
+                    dest = route[-3:] if len(route) >= 6 else "XXX"
 
-                if uld.upper().startswith("BULK"):
-                    bulk_entries.append("BULK/" + line)
-                elif uld:
-                    uld_entries.append(f"ULD/{uld.upper()}\n{line}")
-                else:
-                    bulk_entries.append("BULK/" + line)
+                    formatted = f"{awb}{route}/" \
+                                f"{piece_type}{pieces}K{weight}MC{mc}" \
+                                f"{'T'+piece_line.split('/')[-1] if '/' in piece_line else ''}" \
+                                f"/{description}"
 
-    # Combine lines with BULK first, then ULD
-    ffm_lines.extend(bulk_entries)
-    ffm_lines.extend(uld_entries)
+                    if "ULD/" in current_uld:
+                        ffm_lines.append(formatted)
+                    else:
+                        current_uld = f"ULD/{desc_line.strip().replace(' ', '').upper()}"
+                        ffm_lines.append(current_uld)
+                        ffm_lines.append(formatted)
 
-    return "FFM/8\n" + "\n".join(ffm_lines)
+                    buffer.clear()
+
+    return "\n".join(ffm_lines)

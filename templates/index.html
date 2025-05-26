@@ -1,49 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Cargo Manifest to FFM/8</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-  <div class="container">
-    <h1>Cargo Manifest to FFM/8 Converter</h1>
+  <h1>Upload Cargo Manifest</h1>
+  <form method="POST" enctype="multipart/form-data">
+    <input type="file" name="manifest" accept="application/pdf" required />
+    <button type="submit">Convert</button>
+  </form>
 
-    <form action="/" method="post" enctype="multipart/form-data">
-      <label for="manifest">Upload Cargo Manifest (PDF):</label>
-      <input type="file" id="manifest" name="manifest" accept="application/pdf" required>
-      <button type="submit">Convert</button>
-    </form>
-
-    {% if result %}
-    <h2>Generated FFM/8 Message</h2>
-    <textarea id="ffmText" readonly rows="15">{{ result }}</textarea>
-    <div class="actions">
-      <button type="button" onclick="copyFFM()">Copy</button>
-      <button type="button" onclick="downloadFFM()">Download</button>
-    </div>
-    {% endif %}
-  </div>
-
-  <script>
-    function copyFFM() {
-      const txt = document.getElementById("ffmText");
-      txt.select();
-      document.execCommand("copy");
-      alert("Copied to clipboard!");
-    }
-
-    function downloadFFM() {
-      const text = document.getElementById("ffmText").value;
-      const blob = new Blob([text], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'ffm8_output.txt';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  </script>
+  {% if output %}
+    <h2>FFM/8 Output</h2>
+    <pre>{{ output }}</pre>
+  {% endif %}
 </body>
 </html>
