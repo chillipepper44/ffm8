@@ -98,7 +98,7 @@ def format_entry(lines):
     except (ValueError, TypeError):
         # If weight is not a valid float, return a placeholder or skip
         return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
-    mc = round(float(weight) * 0.006, 2)
+    mc = round(weight_val * 0.006, 2)
     mc = f"{mc:.2f}"
 
     weight_str = f"{int(weight_val)}" if weight_val.is_integer() else f"{weight_val:.3f}"
