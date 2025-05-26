@@ -2,18 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Cargo Manifest to FFM/8</title>
+  <title>FFM/8 Converter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-  <h1>Upload Cargo Manifest</h1>
-  <form method="POST" enctype="multipart/form-data">
-    <input type="file" name="manifest" accept="application/pdf" required />
-    <button type="submit">Convert</button>
-  </form>
+  <div class="container">
+    <h1>Upload Cargo Manifest</h1>
+    <form method="post" enctype="multipart/form-data">
+      <input type="file" name="manifest" accept="application/pdf" required>
+      <button type="submit">Convert</button>
+    </form>
 
-  {% if output %}
-    <h2>FFM/8 Output</h2>
-    <pre>{{ output }}</pre>
-  {% endif %}
+    {% if output %}
+      <h2>FFM/8 Output</h2>
+      <pre>{{ output }}</pre>
+    {% endif %}
+  </div>
 </body>
 </html>
