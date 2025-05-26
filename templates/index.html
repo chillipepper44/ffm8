@@ -1,33 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Cargo Manifest to FFM/8</title>
-    <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
   <div class="container">
     <h1>Cargo Manifest to FFM/8 Converter</h1>
 
-    <form action="/upload" method="post" enctype="multipart/form-data">
+    <form action="/" method="post" enctype="multipart/form-data">
       <label for="manifest">Upload Cargo Manifest (PDF):</label>
       <input type="file" id="manifest" name="manifest" accept="application/pdf" required>
       <button type="submit">Convert</button>
     </form>
 
-    {% if output %}
+    {% if result %}
     <h2>Generated FFM/8 Message</h2>
-    <textarea id="ffmText" readonly>{{ output }}</textarea>
+    <textarea id="ffmText" readonly rows="15">{{ result }}</textarea>
     <div class="actions">
-      <button onclick="copyFFM()">Copy</button>
-      <button onclick="downloadFFM()">Download</button>
+      <button type="button" onclick="copyFFM()">Copy</button>
+      <button type="button" onclick="downloadFFM()">Download</button>
     </div>
     {% endif %}
   </div>
 
   <script>
     function copyFFM() {
-      const txt = document.getElementById("ffmText")
+      const txt = document.getElementById("ffmText");
       txt.select();
       document.execCommand("copy");
       alert("Copied to clipboard!");
@@ -40,7 +40,9 @@
       const link = document.createElement('a');
       link.href = url;
       link.download = 'ffm8_output.txt';
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     }
   </script>
 </body>

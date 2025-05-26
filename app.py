@@ -1,6 +1,7 @@
 import os
 from flask import Flask, request, render_template
-from ffm_parser import parse_manifest_to_ffm8 
+from ffm_parser import parse_manifest_to_ffm8
+
 app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
