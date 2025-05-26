@@ -15,12 +15,6 @@ def extract_float(s):
 
 def parse_manifest_to_ffm8(file):
     file.stream.seek(0)  # Ensure reading from start
-    reader = csv.reader(file.stream.read().decode("utf-8").splitlines())
-    next(reader, None)  # Skip header row
-    for row in reader:
-        pass  # Your CSV processing logic
-
-    file.stream.seek(0)  # Reset pointer before reading as PDF
     doc = fitz.open(stream=file.stream.read(), filetype="pdf")
     lines = []
     for page in doc:
@@ -33,7 +27,12 @@ def parse_manifest_to_ffm8(file):
 
     for i, line in enumerate(lines):
         line = line.strip()
-        if not line or line.lower().startswith("prepared by") or "SECURITY PASSED" in line:
+        if (
+            not line
+            or line.lower().startswith("prepared by")
+            or "SECURITY PASSED" in line
+            or line.lower() in ["owner", "weight", "pieces", "destination"]  # Add more as needed
+        ):
             continue
 
         if re.match(r"^[A-Z]{3}\d{5,}", line):
@@ -89,8 +88,9 @@ def format_entry(lines):
     pcs = pieces.split("/")[0] if "/" in pieces else pieces
     try:
         weight_val = float(weight)
-    except:
-        weight_val = 0.0
+    except (ValueError, TypeError):
+        # If weight is not a valid float, return a placeholder or skip
+        return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
 
     mc = round(weight_val * 0.006, 2)
     mc = f"{mc:.2f}"
