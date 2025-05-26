@@ -13,6 +13,13 @@ def extract_float(s):
     except:
         return None
 
+def is_float(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
 def parse_manifest_to_ffm8(file):
     file.stream.seek(0)  # Ensure reading from start
     doc = fitz.open(stream=file.stream.read(), filetype="pdf")
@@ -30,7 +37,7 @@ def parse_manifest_to_ffm8(file):
         if (
             not line
             or line.lower().startswith("prepared by")
-            or "SECURITY PASSED" in line
+            or "security passed" in line.lower()
             or line.lower() in ["owner", "weight", "pieces", "destination"]  # Add more as needed
         ):
             continue
@@ -91,8 +98,7 @@ def format_entry(lines):
     except (ValueError, TypeError):
         # If weight is not a valid float, return a placeholder or skip
         return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
-
-    mc = round(weight_val * 0.006, 2)
+    mc = round(float(weight) * 0.006, 2)
     mc = f"{mc:.2f}"
 
     weight_str = f"{int(weight_val)}" if weight_val.is_integer() else f"{weight_val:.3f}"
