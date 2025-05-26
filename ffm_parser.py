@@ -1,103 +1,82 @@
-# ffm_parser.py
-
 import fitz  # PyMuPDF
-import re
 
-def is_valid_awb(text):
-    return bool(re.match(r"^\d{3} ?- ?\d{8}$", text.strip()))
-
-def extract_float(s):
-    try:
-        return float(s.strip())
-    except:
-        return None
-
-def parse_manifest_to_ffm8(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
-    lines = []
-    for page in doc:
-        text = page.get_text().split("\n")
-        lines.extend(text)
-
+def parse_manifest_to_ffm8(pdf_file):
     ffm_lines = ["FFM/8"]
-    current_uld = None
+    uld_lines = []
+    cargo_lines = []
+
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text()
+
+    lines = text.splitlines()
+    current_uld = ""
     buffer = []
 
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line or line.lower().startswith("prepared by") or "SECURITY PASSED" in line:
-            continue
+    def flush_buffer():
+        nonlocal buffer, current_uld
+        if len(buffer) >= 6:
+            try:
+                awb = buffer[0].replace(" ", "").strip()
+                pieces = buffer[1].strip()
+                piece_type = "P" if "/" in pieces else "T"
+                pieces_val = pieces.split("/")[0]
 
-        if re.match(r"^[A-Z]{3}\d{5,}", line):
-            current_uld = line.strip().upper()
-            ffm_lines.append(f"ULD/{current_uld}")
-            continue
+                weight_raw = buffer[2].strip()
+                weight = weight_raw.split("/")[0]
+                mc = round(float(weight) * 0.006, 2)
 
-        if is_valid_awb(line):
-            if buffer:
-                ffm_lines.append(format_entry(buffer))
-                buffer = []
+                desc = buffer[3].strip()
+                shc = buffer[4].strip()
+                description = f"{desc} {shc}".strip()
+
+                route = buffer[5].replace(" ", "").replace("-", "").strip()
+                if len(route) >= 6:
+                    origin = route[:3]
+                    dest = route[-3:]
+                else:
+                    origin = "XXX"
+                    dest = "XXX"
+
+                line = f"{awb}{origin}-{dest}/{piece_type}{pieces_val}K{weight}MC{mc}"
+                if "/" in pieces:
+                    part = pieces.split("/")[-1]
+                    line += f"T{part}"
+                if description:
+                    line += f"/{description}"
+                if current_uld:
+                    cargo_lines.append(f"ULD/{current_uld}")
+                    current_uld = ""
+                cargo_lines.append(line)
+            except Exception:
+                pass
+        buffer = []
+
+    for raw in lines:
+        line = raw.strip()
+        if not line or any(keyword in line for keyword in [
+            "Cargo Manifest", "Owner", "SECURITY PASSED", "Page", "Total:", "kg", "Registration"
+        ]):
+            continue
+        if line.upper().startswith(("ULD", "PMC", "FLA", "PKC")):
+            flush_buffer()
+            current_uld = line
+        elif line.replace(" ", "").startswith(("555", "800")):
+            flush_buffer()
             buffer = [line]
+        elif buffer:
+            buffer.append(line)
+    flush_buffer()
+
+    # รวม ULD ให้แสดงก่อนแค่ครั้งเดียว
+    output = []
+    shown_uld = set()
+    for line in cargo_lines:
+        if line.startswith("ULD/"):
+            if line not in shown_uld:
+                output.append(line)
+                shown_uld.add(line)
         else:
-            if buffer:
-                buffer.append(line)
-
-    if buffer:
-        ffm_lines.append(format_entry(buffer))
-
-    return "\n".join(ffm_lines)
-
-
-def format_entry(lines):
-    awb_line = lines[0]
-    parts = awb_line.replace(" ", "").split("-")
-    awb = f"{parts[0]}-{parts[1]}" if len(parts) == 2 else awb_line.strip()
-
-    pieces = ""
-    weight = ""
-    dest = ""
-    shc = ""
-    desc = []
-
-    for line in lines[1:]:
-        line = line.strip()
-        # Look for PIECES and WEIGHT
-        if re.match(r"^\d+(\/\d+)?$", line):
-            pieces = line
-        elif re.match(r"^\d+(\.\d+)?(\/\d+(\.\d+)?)?$", line):
-            weight = line.split("/")[0]
-        elif re.match(r"^[A-Z]{3} ?- ?[A-Z]{3}$", line):
-            dest = line.replace(" ", "")
-        elif line in ["GEN", "ELM", "ELI"]:
-            shc = line
-        else:
-            desc.append(line)
-
-    if not awb or not pieces or not weight or not dest:
-        return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
-
-    # Determine if P or T
-    ptype = "P" if "/" in pieces else "T"
-    pcs = pieces.split("/")[0] if "/" in pieces else pieces
-    try:
-        weight_val = float(weight)
-    except:
-        weight_val = 0.0
-
-    mc = round(weight_val * 0.006, 2)
-    mc = f"{mc:.2f}"
-
-    weight_str = f"{int(weight_val)}" if weight_val.is_integer() else f"{weight_val:.3f}"
-
-    detail = f"{awb}{dest}/" \
-             f"{ptype}{pcs}K{weight_str}MC{mc}"
-
-    if "/" in pieces:
-        detail += f"T{pieces.split('/')[1]}"
-
-    if desc:
-        detail += f"/{' '.join(desc)}"
-    if shc:
-        detail += f"/{shc}"
-
-    return detail
+            output.append(line)
+    return "\n".join(output)
