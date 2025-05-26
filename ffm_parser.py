@@ -87,17 +87,21 @@ def format_entry(lines):
         else:
             desc.append(line)
 
-    if not awb or not pieces or not weight or not dest:
+    # Extra check: weight must be a valid float
+    def is_float(val):
+        try:
+            float(val)
+            return True
+        except Exception:
+            return False
+
+    if not awb or not pieces or not weight or not dest or not is_float(weight):
         return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
 
     # Determine if P or T
     ptype = "P" if "/" in pieces else "T"
     pcs = pieces.split("/")[0] if "/" in pieces else pieces
-    try:
-        weight_val = float(weight)
-    except (ValueError, TypeError):
-        # If weight is not a valid float, return a placeholder or skip
-        return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
+    weight_val = float(weight)
     mc = round(weight_val * 0.006, 2)
     mc = f"{mc:.2f}"
 
