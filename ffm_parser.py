@@ -47,7 +47,6 @@ def process_buffer(lines, uld):
         route_line = lines[i + 5]
 
         try:
-            # Filter and validate
             if not awb_line or not piece_line or not weight_line or not route_line:
                 i += 1
                 continue
@@ -57,21 +56,18 @@ def process_buffer(lines, uld):
             piece_type = "P" if "/" in piece_line else "T"
 
             weight = weight_line.split("/")[0].strip()
-            # Only process if weight is a valid float
             try:
                 weight_val = float(weight)
             except ValueError:
-                i += 6
+                i += 1
                 continue
             mc = round(weight_val * 0.006, 2)
 
             route = route_line.replace(" ", "").replace("-", "").strip()
             dest = route[-3:] if len(route) >= 6 else "XXX"
 
-            # Combine desc and SHC
             description = f"{desc_line.strip()} {shc_line.strip()}".strip()
 
-            # Format result
             line = f"{awb}{route}/" \
                    f"{piece_type}{pieces}K{weight}" \
                    f"MC{mc}"
@@ -87,7 +83,6 @@ def process_buffer(lines, uld):
                 entries.append(f"ULD/{uld.upper()}")
             entries.append(line)
         except Exception:
-            # Skip if any parsing fails (e.g., "Owner", "Flight No." lines)
             pass
         i += 6
 
