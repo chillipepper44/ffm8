@@ -61,7 +61,7 @@ def process_buffer(lines, uld):
             try:
                 weight_val = float(weight)
             except ValueError:
-                i += 1
+                i += 6
                 continue
             mc = round(weight_val * 0.006, 2)
 
