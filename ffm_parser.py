@@ -1,52 +1,103 @@
-import fitz  # PyMuPDF
+# ffm_parser.py
 
-def parse_manifest_to_ffm8(pdf_file):
+import fitz  # PyMuPDF
+import re
+
+def is_valid_awb(text):
+    return bool(re.match(r"^\d{3} ?- ?\d{8}$", text.strip()))
+
+def extract_float(s):
+    try:
+        return float(s.strip())
+    except:
+        return None
+
+def parse_manifest_to_ffm8(file):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    lines = []
+    for page in doc:
+        text = page.get_text().split("\n")
+        lines.extend(text)
+
     ffm_lines = ["FFM/8"]
     current_uld = None
-    lines = []
+    buffer = []
 
-    with fitz.open(stream=pdf_file.read(), filetype="pdf") as doc:
-        for page in doc:
-            text = page.get_text()
-            blocks = text.split("\n")
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line or line.lower().startswith("prepared by") or "SECURITY PASSED" in line:
+            continue
 
-            buffer = []
-            for line in blocks:
-                if line.strip() == "":
-                    continue
-                buffer.append(line.strip())
+        if re.match(r"^[A-Z]{3}\d{5,}", line):
+            current_uld = line.strip().upper()
+            ffm_lines.append(f"ULD/{current_uld}")
+            continue
 
-                # เมื่อสะสมครบ 6 บรรทัด (ตัวอย่างคร่าว ๆ)
-                if len(buffer) >= 6 and any(" - " in b for b in buffer):
-                    awb_line = buffer.pop(0)
-                    piece_line = buffer.pop(0)
-                    weight_line = buffer.pop(0)
-                    desc_line = buffer.pop(0)
-                    shc_line = buffer.pop(0)
-                    route_line = buffer.pop(0)
+        if is_valid_awb(line):
+            if buffer:
+                ffm_lines.append(format_entry(buffer))
+                buffer = []
+            buffer = [line]
+        else:
+            if buffer:
+                buffer.append(line)
 
-                    # ตัดแต่งข้อมูล
-                    awb = awb_line.replace(" ", "").strip()
-                    pieces = piece_line.split("/")[0]
-                    piece_type = "P" if "/" in piece_line else "T"
-                    weight = weight_line.split("/")[0].strip()
-                    mc = round(float(weight) * 0.006, 2)
-                    description = f"{desc_line.strip()} {shc_line.strip()}".strip()
-                    route = route_line.replace(" ", "").replace("-", "").strip()
-                    dest = route[-3:] if len(route) >= 6 else "XXX"
-
-                    formatted = f"{awb}{route}/" \
-                                f"{piece_type}{pieces}K{weight}MC{mc}" \
-                                f"{'T'+piece_line.split('/')[-1] if '/' in piece_line else ''}" \
-                                f"/{description}"
-
-                    if "ULD/" in current_uld:
-                        ffm_lines.append(formatted)
-                    else:
-                        current_uld = f"ULD/{desc_line.strip().replace(' ', '').upper()}"
-                        ffm_lines.append(current_uld)
-                        ffm_lines.append(formatted)
-
-                    buffer.clear()
+    if buffer:
+        ffm_lines.append(format_entry(buffer))
 
     return "\n".join(ffm_lines)
+
+
+def format_entry(lines):
+    awb_line = lines[0]
+    parts = awb_line.replace(" ", "").split("-")
+    awb = f"{parts[0]}-{parts[1]}" if len(parts) == 2 else awb_line.strip()
+
+    pieces = ""
+    weight = ""
+    dest = ""
+    shc = ""
+    desc = []
+
+    for line in lines[1:]:
+        line = line.strip()
+        # Look for PIECES and WEIGHT
+        if re.match(r"^\d+(\/\d+)?$", line):
+            pieces = line
+        elif re.match(r"^\d+(\.\d+)?(\/\d+(\.\d+)?)?$", line):
+            weight = line.split("/")[0]
+        elif re.match(r"^[A-Z]{3} ?- ?[A-Z]{3}$", line):
+            dest = line.replace(" ", "")
+        elif line in ["GEN", "ELM", "ELI"]:
+            shc = line
+        else:
+            desc.append(line)
+
+    if not awb or not pieces or not weight or not dest:
+        return f"{awb}XXXXXXXXXXXX/P{pieces}K{weight}/{' '.join(desc)}"
+
+    # Determine if P or T
+    ptype = "P" if "/" in pieces else "T"
+    pcs = pieces.split("/")[0] if "/" in pieces else pieces
+    try:
+        weight_val = float(weight)
+    except:
+        weight_val = 0.0
+
+    mc = round(weight_val * 0.006, 2)
+    mc = f"{mc:.2f}"
+
+    weight_str = f"{int(weight_val)}" if weight_val.is_integer() else f"{weight_val:.3f}"
+
+    detail = f"{awb}{dest}/" \
+             f"{ptype}{pcs}K{weight_str}MC{mc}"
+
+    if "/" in pieces:
+        detail += f"T{pieces.split('/')[1]}"
+
+    if desc:
+        detail += f"/{' '.join(desc)}"
+    if shc:
+        detail += f"/{shc}"
+
+    return detail
