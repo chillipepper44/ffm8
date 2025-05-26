@@ -1,89 +1,68 @@
-# ffm_parser.py
-
 import fitz  # PyMuPDF
 
 def parse_manifest_to_ffm8(file):
-    ffm_lines = []
-    uld_section = None
-    buffer = []
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    ffm_lines = ["FFM/8"]
 
-    text = ""
-    with fitz.open(stream=file.read(), filetype="pdf") as pdf:
-        for page in pdf:
-            text += page.get_text()
+    current_uld = "XXXXXXXXXXXX"
+    temp_entry = []
+    results = []
 
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-
-        # Check for ULD line
-        if line.upper().startswith("PMC") or line.upper().startswith("PKC") or line.upper().startswith("FLA"):
-            if buffer:
-                ffm_lines.extend(process_buffer(buffer, uld_section))
-                buffer = []
-            uld_section = line.strip()
-        else:
-            buffer.append(line)
-        i += 1
-
-    # Process any remaining buffer
-    if buffer:
-        ffm_lines.extend(process_buffer(buffer, uld_section))
-
-    return "FFM/8\n" + "\n".join(ffm_lines)
-
-
-def process_buffer(lines, uld):
-    entries = []
-    i = 0
-    while i < len(lines) - 5:
-        awb_line = lines[i]
-        piece_line = lines[i + 1]
-        weight_line = lines[i + 2]
-        desc_line = lines[i + 3]
-        shc_line = lines[i + 4]
-        route_line = lines[i + 5]
-
-        try:
-            if not awb_line or not piece_line or not weight_line or not route_line:
-                i += 1
-                continue
-
-            awb = awb_line.replace(" ", "").strip()
-            pieces = piece_line.strip().split("/")[0]
-            piece_type = "P" if "/" in piece_line else "T"
-
-            weight = weight_line.split("/")[0].strip()
+    def flush_entry():
+        if len(temp_entry) >= 6:
             try:
-                weight_val = float(weight)
-            except ValueError:
-                i += 1
+                awb_line = temp_entry[0]
+                piece_line = temp_entry[1]
+                weight_line = temp_entry[2]
+                desc_line = temp_entry[3]
+                shc_line = temp_entry[4]
+                route_line = temp_entry[5]
+
+                awb = awb_line.replace(" ", "").strip()
+                pieces = piece_line.split("/")[0].strip()
+                piece_type = "P" if "/" in piece_line else "T"
+
+                weight = weight_line.split("/")[0].strip()
+                mc = round(float(weight) * 0.006, 2)
+
+                description = f"{desc_line.strip()} {shc_line.strip()}".strip().replace("  ", " ")
+                route = route_line.replace(" ", "").replace("-", "").strip()
+                dest = route[-3:] if len(route) >= 6 else "XXX"
+
+                # Add T[number] if found in piece_line
+                tnum = ""
+                if "/" in piece_line:
+                    parts = piece_line.split("/")
+                    if len(parts) == 2:
+                        tnum = f"T{parts[1].strip()}"
+
+                formatted = f"{awb}{route}/{piece_type}{pieces}K{weight}MC{mc}{tnum}/{description}"
+                results.append((current_uld, formatted))
+            except Exception as e:
+                print(f"Skip row due to error: {e} => {temp_entry}")
+        temp_entry.clear()
+
+    for page in doc:
+        text = page.get_text("text")
+        lines = text.splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line:
                 continue
-            mc = round(weight_val * 0.006, 2)
 
-            route = route_line.replace(" ", "").replace("-", "").strip()
-            dest = route[-3:] if len(route) >= 6 else "XXX"
+            if line.upper().startswith("ULD/") or line.upper().startswith("PMC") or line.upper().startswith("FLA") or line.upper().startswith("PKC"):
+                flush_entry()
+                current_uld = line.strip().replace("ULD/", "").upper()
+                ffm_lines.append(f"ULD/{current_uld}")
+            elif line.startswith("555") or line.startswith("800") or line.startswith("331"):
+                flush_entry()
+                temp_entry.append(line)
+            else:
+                temp_entry.append(line)
 
-            description = f"{desc_line.strip()} {shc_line.strip()}".strip()
+    flush_entry()
 
-            line = f"{awb}{route}/" \
-                   f"{piece_type}{pieces}K{weight}" \
-                   f"MC{mc}"
+    for uld, line in results:
+        ffm_lines.append(line)
 
-            if "/" in piece_line:
-                part_total = piece_line.split("/")[1]
-                line += f"T{part_total}"
-
-            if description:
-                line += f"/{description}"
-
-            if uld:
-                entries.append(f"ULD/{uld.upper()}")
-            entries.append(line)
-        except Exception:
-            pass
-        i += 6
-
-    return entries
+    return "\n".join(ffm_lines)
