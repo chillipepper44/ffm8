@@ -38,7 +38,11 @@ def parse_manifest_to_ffm8(file):
             not line
             or line.lower().startswith("prepared by")
             or "security passed" in line.lower()
-            or line.lower() in ["owner", "weight", "pieces", "destination"]  # Add more as needed
+            or any(keyword in line.lower() for keyword in [
+                "owner", "registration", "date", "flight", "point of loading", "point of unloading",
+                "airwaybill", "pieces", "weight", "nature of goods", "shc", "org-dest",
+                "operation", "officials", "use", "kg", "total", "manifest", "icao"
+            ])
         ):
             continue
 
