@@ -1,4 +1,5 @@
 # ffm_parser.py
+
 import pdfplumber
 
 def parse_manifest_to_ffm8(pdf_path):
@@ -11,7 +12,7 @@ def parse_manifest_to_ffm8(pdf_path):
             table = page.extract_table()
             if not table:
                 continue
-            for row in table[1:]:  # skip header
+            for row in table[1:]:  # Skip header
                 if len(row) < 6:
                     continue
                 awb, pcs, weight, dest, flight, uld = [cell.strip() if cell else '' for cell in row[:6]]
