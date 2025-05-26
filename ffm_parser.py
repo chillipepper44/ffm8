@@ -57,7 +57,12 @@ def process_buffer(lines, uld):
             piece_type = "P" if "/" in piece_line else "T"
 
             weight = weight_line.split("/")[0].strip()
-            weight_val = float(weight)
+            # Only process if weight is a valid float
+            try:
+                weight_val = float(weight)
+            except ValueError:
+                i += 1
+                continue
             mc = round(weight_val * 0.006, 2)
 
             route = route_line.replace(" ", "").replace("-", "").strip()
@@ -69,7 +74,7 @@ def process_buffer(lines, uld):
             # Format result
             line = f"{awb}{route}/" \
                    f"{piece_type}{pieces}K{weight}" \
-                   f"{'' if '.' not in weight else ''}MC{mc}"
+                   f"MC{mc}"
 
             if "/" in piece_line:
                 part_total = piece_line.split("/")[1]
@@ -81,12 +86,9 @@ def process_buffer(lines, uld):
             if uld:
                 entries.append(f"ULD/{uld.upper()}")
             entries.append(line)
-
-            i += 6
-
-        except ValueError:
+        except Exception:
             # Skip if any parsing fails (e.g., "Owner", "Flight No." lines)
-            i += 1
-            continue
+            pass
+        i += 6
 
     return entries
