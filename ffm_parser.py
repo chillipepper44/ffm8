@@ -2,6 +2,7 @@
 
 import fitz  # PyMuPDF
 import re
+import csv
 
 def is_valid_awb(text):
     return bool(re.match(r"^\d{3} ?- ?\d{8}$", text.strip()))
@@ -13,7 +14,14 @@ def extract_float(s):
         return None
 
 def parse_manifest_to_ffm8(file):
-    doc = fitz.open(stream=file.read(), filetype="pdf")
+    file.stream.seek(0)  # Ensure reading from start
+    reader = csv.reader(file.stream.read().decode("utf-8").splitlines())
+    next(reader, None)  # Skip header row
+    for row in reader:
+        pass  # Your CSV processing logic
+
+    file.stream.seek(0)  # Reset pointer before reading as PDF
+    doc = fitz.open(stream=file.stream.read(), filetype="pdf")
     lines = []
     for page in doc:
         text = page.get_text().split("\n")
