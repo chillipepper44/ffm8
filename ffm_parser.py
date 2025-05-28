@@ -1,6 +1,7 @@
-import fitz  # PyMuPDF
-
 def parse_manifest_to_ffm8(pdf_path):
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(stream=pdf_path.read(), filetype="pdf")
     doc = fitz.open(pdf_path)
     text = "\n".join([page.get_text() for page in doc])
 
