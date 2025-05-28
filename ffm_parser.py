@@ -19,7 +19,7 @@ def parse_manifest_to_ffm8(pdf_path):
 
     df_words = pd.DataFrame(all_words)
 
-    # กำหนดช่วงของ x สำหรับแต่ละคอลัมน์
+    # กำหนดช่วงของ x สำหรับแต่ละคอลัมน์dd
     column_ranges = {
         "col0": (0, 100),
         "col1": (100, 150),
