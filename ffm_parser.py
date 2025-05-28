@@ -3,7 +3,7 @@ import fitz
 from collections import defaultdict
 import re
 
-def parse_manifest_to_ffm8_precise(pdf_path):
+def parse_manifest_to_ffm8(pdf_path):
     doc = fitz.open(pdf_path)
     lines_with_y = defaultdict(list)
 

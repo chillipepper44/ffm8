@@ -1,19 +1,26 @@
-from flask import Flask, request, render_template
-from ffm_parser import parse_manifest_to_ffm8
-import os
+from flask import Flask, render_template, request
+import tempfile
+from ffm_parser import parse_manifest_to_ffm8_precise
 
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    output = None
+    output = ""
     if request.method == "POST":
-        file = request.files.get("manifest")
-        if file:
-            output = parse_manifest_to_ffm8(file)
+        file = request.files["file"]
+        if file and file.filename.endswith(".pdf"):
+            # บันทึกไฟล์ชั่วคราว
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                file.save(tmp.name)
+                pdf_path = tmp.name
+
+            try:
+                output = parse_manifest_to_ffm8_precise(pdf_path)
+            except Exception as e:
+                output = f"เกิดข้อผิดพลาด: {str(e)}"
+
     return render_template("index.html", output=output)
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
-
+if __name__ == "__main__":
+    app.run(debug=True)
