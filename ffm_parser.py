@@ -32,7 +32,7 @@ def parse_manifest_to_ffm8(pdf_path):
     in_bulk = False
 
     awb_regex = re.compile(
-        r"^(555|800)\s*-\s*(\d+)\s+(\d+(?:/\d+)?)\s+([\d.]+)(?:/[\d.]+)?\s+(.*?)\s+([A-Z]{3})\s*-\s*([A-Z]{3})$"
+        r"^(\d{3})\s*-\s*(\d+)\s+(\d+(?:/\d+)?)\s+([\d.]+)(?:/[\d.]+)?\s+(.*?)\s+([A-Z]{3})\s*-\s*([A-Z]{3})$"
     )
 
     for line in structured_lines:
