@@ -1,78 +1,79 @@
-# ffm_parser.py
 import fitz  # PyMuPDF
 
-def parse_manifest_to_ffm8(pdf_file):
-    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-    lines = []
-    current_uld = None
+def parse_manifest_to_ffm8(pdf_path):
+    doc = fitz.open(pdf_path)
+    text = "\n".join([page.get_text() for page in doc])
 
-    for page in doc:
-        text = page.get_text("text")
-        blocks = text.split("\n")
+    lines = text.splitlines()
+    ffm_lines = ["FFM/8"]
+    current_uld = ""
+    buffer = []
+    cargos = []
+    
+    def flush_buffer():
+        nonlocal buffer, current_uld
+        if len(buffer) < 6:
+            buffer.clear()
+            return
 
-        i = 0
-        while i < len(blocks):
-            line = blocks[i].strip()
+        try:
+            awb_line = buffer[0]
+            pieces_line = buffer[1]
+            weight_line = buffer[2]
+            desc_line = buffer[3]
+            shc_line = buffer[4]
+            route_line = buffer[5]
 
-            # ตรวจจับ ULD
-            if line.startswith("ULD/") or (
-                len(line) == 11 and line[:3].isalpha() and line[3:].isdigit()
-            ):
-                current_uld = f"ULD/{line}"
-                if current_uld not in lines:
-                    lines.append(current_uld)
-                i += 1
-                continue
+            awb = awb_line.replace(" ", "")
+            pcs_raw = pieces_line.strip()
+            pcs_val = pcs_raw.split("/")[0]
+            pcs_type = "S" if "/" in pcs_raw else "T"
 
-            # ตรวจจับ AWB
-            if line[:3].isdigit() and " - " in line:
-                try:
-                    awb = line.replace(" ", "")
-                    pieces_line = blocks[i + 1].strip()
-                    weight_line = blocks[i + 2].strip()
-                    desc_line = blocks[i + 3].strip()
-                    shc_line = blocks[i + 4].strip()
-                    route_line = blocks[i + 5].strip()
+            weight = weight_line.split("/")[0].strip()
+            weight_f = float(weight)
+            mc = round(weight_f * 0.006, 2)
 
-                    # สร้าง prefix S = part, T = total
-                    pieces = pieces_line.split()[0]
-                    piece_type = "S" if "/" in pieces else "T"
-                    piece_value = pieces.split("/")[0] if "/" in pieces else pieces
-
-                    weight = weight_line.split("/")[0].strip()
-                    weight_value = float(weight)
-                    weight_str = f"{weight_value:.2f}".rstrip("0").rstrip(".")
-                    mc = round(weight_value * 0.006, 2)
-                    mc_str = f"{mc:.2f}".rstrip("0").rstrip(".")
-
-                    desc = f"{desc_line} {shc_line}".strip()
-                    route = route_line.replace(" ", "").replace("-", "")
-                    if len(route) >= 6:
-                        org = route[:3]
-                        dest = route[-3:]
-                        route_str = f"{org}{dest}"
-                    else:
-                        route_str = "XXXXXX"
-
-                    formatted = (
-                        f"{awb}{route_str}/{piece_type}{piece_value}K{weight_str}MC{mc_str}T"
-                    )
-
-                    # ดึง Txx หากมีจาก pieces
-                    if "/" in pieces_line:
-                        t_part = pieces_line.split("/")[1]
-                        formatted += f"{t_part}"
-
-                    if desc:
-                        formatted += f"/{desc}"
-
-                    lines.append(formatted)
-                    i += 6
-                except Exception:
-                    i += 1
-                    continue
+            desc = f"{desc_line.strip()} {shc_line.strip()}".strip().replace("  ", " ")
+            route = route_line.replace(" ", "").replace("-", "")
+            if len(route) >= 6:
+                origin, dest = route[:3], route[-3:]
             else:
-                i += 1
+                origin, dest = "XXX", "XXX"
 
-    doc.close()
-    return "FFM/8\n" + "\n".join(lines)
+            extra = f"T{pcs_raw.split('/')[1]}" if "/" in pcs_raw else ""
+            formatted = f"{awb}{origin}{dest}/{pcs_type}{pcs_val}K{weight_f:.2f}MC{mc}{extra}"
+            if desc:
+                formatted += f"/{desc.replace(' ', ' ', 1)}"
+            if current_uld:
+                cargos.append(f"ULD/{current_uld}")
+                current_uld = ""
+            cargos.append(formatted)
+        except Exception:
+            pass
+        buffer.clear()
+
+    for line in lines:
+        line = line.strip()
+        if not line or any(skip in line for skip in ["Cargo Manifest", "Owner", "SECURITY PASSED", "Total:", "Page", "kg", "Date/STD", "Point of Loading"]):
+            continue
+        if line.upper().startswith(("ULD", "PMC", "FLA", "PKC")):
+            flush_buffer()
+            current_uld = line.strip()
+        elif line.replace(" ", "").startswith(("555", "800")):
+            flush_buffer()
+            buffer = [line]
+        elif buffer:
+            buffer.append(line)
+    flush_buffer()
+
+    # Combine with ULD appearing only once
+    seen_uld = set()
+    for line in cargos:
+        if line.startswith("ULD/"):
+            if line not in seen_uld:
+                ffm_lines.append(line)
+                seen_uld.add(line)
+        else:
+            ffm_lines.append(line)
+
+    return "\n".join(ffm_lines)
