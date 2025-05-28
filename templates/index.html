@@ -4,10 +4,12 @@
   <meta charset="UTF-8">
   <title>FFM/8 Converter</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
   <div class="container">
-    <h1>Gen FFM Form PDF</h1>
+    <h1>Generate FFM/8 from PDF</h1>
+
     <form method="post" enctype="multipart/form-data">
       <input type="file" name="manifest" accept="application/pdf" required>
       <button type="submit">Convert</button>
@@ -15,8 +17,26 @@
 
     {% if output %}
       <h2>FFM/8 Output</h2>
-      <pre>{{ output }}</pre>
+      <textarea id="ffmOutput" readonly>{{ output }}</textarea>
+
+      <div class="actions">
+        <button type="button" onclick="copyToClipboard()">Copy Output</button>
+        <span id="copiedNotice" style="color: #00ff99; display: none;">✔ Copied!</span>
+      </div>
     {% endif %}
   </div>
+
+  <script>
+    function copyToClipboard() {
+      const textarea = document.getElementById("ffmOutput");
+      textarea.select();
+      textarea.setSelectionRange(0, 99999); // for mobile
+      document.execCommand("copy");
+
+      const notice = document.getElementById("copiedNotice");
+      notice.style.display = "inline";
+      setTimeout(() => notice.style.display = "none", 2000);
+    }
+  </script>
 </body>
 </html>
