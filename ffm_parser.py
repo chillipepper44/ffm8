@@ -1,80 +1,77 @@
-def parse_manifest_to_ffm8(pdf_path):
-    import fitz  # PyMuPDF
 
-    doc = fitz.open(stream=pdf_path.read(), filetype="pdf")
+import fitz
+from collections import defaultdict
+import re
+
+def parse_manifest_to_ffm8_precise(pdf_path):
     doc = fitz.open(pdf_path)
-    text = "\n".join([page.get_text() for page in doc])
+    lines_with_y = defaultdict(list)
 
-    lines = text.splitlines()
-    ffm_lines = ["FFM/8"]
-    current_uld = ""
-    buffer = []
-    cargos = []
-    
-    def flush_buffer():
-        nonlocal buffer, current_uld
-        if len(buffer) < 6:
-            buffer.clear()
-            return
+    for page in doc:
+        for block in page.get_text("dict")["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    y0 = round(line["bbox"][1], 1)
+                    for span in line["spans"]:
+                        x0 = span["bbox"][0]
+                        text = span["text"].strip()
+                        if text:
+                            lines_with_y[y0].append((x0, text))
 
-        try:
-            awb_line = buffer[0]
-            pieces_line = buffer[1]
-            weight_line = buffer[2]
-            desc_line = buffer[3]
-            shc_line = buffer[4]
-            route_line = buffer[5]
+    structured_lines = []
+    for y in sorted(lines_with_y.keys()):
+        spans = sorted(lines_with_y[y], key=lambda x: x[0])
+        structured_lines.append(" ".join([text for _, text in spans]))
 
-            awb = awb_line.replace(" ", "")
-            pcs_raw = pieces_line.strip()
-            pcs_val = pcs_raw.split("/")[0]
-            pcs_type = "S" if "/" in pcs_raw else "T"
+    results = ["FFM/8"]
+    awb_counter = defaultdict(int)
+    current_uld = None
+    uld_inserted = set()
+    cargo_lines = []
+    bulk_lines = []
+    in_bulk = False
 
-            weight = weight_line.split("/")[0].strip()
-            weight_f = float(weight)
-            mc = round(weight_f * 0.006, 2)
+    awb_regex = re.compile(
+        r"^(555|800)\s*-\s*(\d+)\s+(\d+(?:/\d+)?)\s+([\d.]+)(?:/[\d.]+)?\s+(.*?)\s+([A-Z]{3})\s*-\s*([A-Z]{3})$"
+    )
 
-            desc = f"{desc_line.strip()} {shc_line.strip()}".strip().replace("  ", " ")
-            route = route_line.replace(" ", "").replace("-", "")
-            if len(route) >= 6:
-                origin, dest = route[:3], route[-3:]
-            else:
-                origin, dest = "XXX", "XXX"
-
-            extra = f"T{pcs_raw.split('/')[1]}" if "/" in pcs_raw else ""
-            formatted = f"{awb}{origin}{dest}/{pcs_type}{pcs_val}K{weight_f:.2f}MC{mc}{extra}"
-            if desc:
-                formatted += f"/{desc.replace(' ', ' ', 1)}"
-            if current_uld:
-                cargos.append(f"ULD/{current_uld}")
-                current_uld = ""
-            cargos.append(formatted)
-        except Exception:
-            pass
-        buffer.clear()
-
-    for line in lines:
+    for line in structured_lines:
         line = line.strip()
-        if not line or any(skip in line for skip in ["Cargo Manifest", "Owner", "SECURITY PASSED", "Total:", "Page", "kg", "Date/STD", "Point of Loading"]):
+        if not line:
             continue
-        if line.upper().startswith(("ULD", "PMC", "FLA", "PKC")):
-            flush_buffer()
-            current_uld = line.strip()
-        elif line.replace(" ", "").startswith(("555", "800")):
-            flush_buffer()
-            buffer = [line]
-        elif buffer:
-            buffer.append(line)
-    flush_buffer()
 
-    # Combine with ULD appearing only once
-    seen_uld = set()
-    for line in cargos:
-        if line.startswith("ULD/"):
-            if line not in seen_uld:
-                ffm_lines.append(line)
-                seen_uld.add(line)
-        else:
-            ffm_lines.append(line)
+        if line.upper() == "BULK":
+            in_bulk = True
+            continue
 
-    return "\n".join(ffm_lines)
+        if re.match(r"^[A-Z]{3}\d{5}[A-Z]{2}$", line):
+            current_uld = f"ULD/{line}"
+            in_bulk = False
+            continue
+
+        match = awb_regex.match(line)
+        if match:
+            prefix, awb_number, pcs_raw, weight_raw, desc, org, dest = match.groups()
+            awb = f"{prefix}{awb_number}"
+            awb_counter[awb] += 1
+
+            pcs_left, pcs_right = pcs_raw.split("/") if "/" in pcs_raw else (pcs_raw, "")
+            weight_val = float(weight_raw)
+            mc = round(weight_val * 0.006, 2)
+            piece_type = "S" if awb_counter[awb] > 1 else "T"
+
+            formatted = f"{prefix}-{awb_number}{org}{dest}/{piece_type}{pcs_left}K{weight_val}MC{mc}"
+            if pcs_right:
+                formatted += f"T{pcs_right}"
+            formatted += f"/{desc}/{dest}"
+
+            if in_bulk:
+                bulk_lines.append(formatted)
+            else:
+                if current_uld and current_uld not in uld_inserted:
+                    cargo_lines.append(current_uld)
+                    uld_inserted.add(current_uld)
+                cargo_lines.append(formatted)
+
+    doc.close()
+    return "\n".join(results + bulk_lines + cargo_lines)
