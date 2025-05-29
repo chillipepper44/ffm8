@@ -1,111 +1,77 @@
-import pdfplumber
-import pandas as pd
-import re
+
+import fitz
 from collections import defaultdict
+import re
 
 def parse_manifest_to_ffm8(pdf_path):
-    # ดึงคำจากทุกหน้า
-    all_words = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_num, page in enumerate(pdf.pages):
-            words = page.extract_words(x_tolerance=1, y_tolerance=2, keep_blank_chars=True)
-            for word in words:
-                all_words.append({
-                    "page": page_num + 1,
-                    "x": float(word["x0"]),
-                    "y": round(float(word["top"]), 1),
-                    "text": word["text"].strip()
-                })
+    doc = fitz.open(pdf_path)
+    lines_with_y = defaultdict(list)
 
-    df_words = pd.DataFrame(all_words)
+    for page in doc:
+        for block in page.get_text("dict")["blocks"]:
+            if "lines" in block:
+                for line in block["lines"]:
+                    y0 = round(line["bbox"][1], 1)
+                    for span in line["spans"]:
+                        x0 = span["bbox"][0]
+                        text = span["text"].strip()
+                        if text:
+                            lines_with_y[y0].append((x0, text))
 
-    # กำหนดช่วงของ x สำหรับแต่ละคอลัมน์dd
-    column_ranges = {
-        "col0": (0, 100),
-        "col1": (100, 150),
-        "col4": (250, 320),
-        "col8": (500, 600),
-        "col10": (650, 700),
-        "col11": (700, 800),
-    }
+    structured_lines = []
+    for y in sorted(lines_with_y.keys()):
+        spans = sorted(lines_with_y[y], key=lambda x: x[0])
+        structured_lines.append(" ".join([text for _, text in spans]))
 
-    # แยกข้อความเข้าแถวตาม y
-    rows_by_y = {}
-    for _, row in df_words.iterrows():
-        x, y, text = row["x"], row["y"], row["text"]
-        col_name = None
-        for col, (x_min, x_max) in column_ranges.items():
-            if x_min <= x < x_max:
-                col_name = col
-                break
-        if col_name:
-            if y not in rows_by_y:
-                rows_by_y[y] = {col: "" for col in column_ranges}
-            rows_by_y[y][col_name] += " " + text
-
-    # แปลงเป็น DataFrame
-    structured_rows = []
-    for y, cols in rows_by_y.items():
-        row_data = {"y": y}
-        row_data.update({col: val.strip() for col, val in cols.items()})
-        structured_rows.append(row_data)
-    df_structured = pd.DataFrame(structured_rows).sort_values(by="y").reset_index(drop=True)
-
-    # สร้าง FFM/8 Output
     results = ["FFM/8"]
+    awb_counter = defaultdict(int)
     current_uld = None
-    seen_aman = defaultdict(int)
-    uld_blocks = defaultdict(list)
+    uld_inserted = set()
+    cargo_lines = []
+    bulk_lines = []
+    in_bulk = False
 
-    for _, row in df_structured.iterrows():
-        raw = row.get("col0", "").strip()
+    awb_regex = re.compile(
+        r"^(\d{3})\s*-\s*(\d+)\s+(\d+(?:/\d+)?)\s+([\d.]+)(?:/[\d.]+)?\s+(.*?)\s+([A-Z]{3})\s*-\s*([A-Z]{3})$"
+    )
 
-        if raw.upper().startswith("ULD") or re.match(r"^[A-Z]{3}\d{5}[A-Z]{2}$", raw):
-            current_uld = f"ULD/{raw}" if not raw.startswith("ULD/") else raw
+    for line in structured_lines:
+        line = line.strip()
+        if not line:
             continue
 
-        if raw.upper() == "BULK":
-            current_uld = "Bulk"
+        if line.upper() == "BULK":
+            in_bulk = True
             continue
 
-        if re.match(r"^\d{3}\s*-\s*\d{8}$", raw) or re.match(r"^\d{11}$", raw.replace(" ", "")):
-            aman = raw.replace(" ", "").replace("-", "")
-            pcs = row.get("col1", "").strip()
-            weight = row.get("col4", "").strip()
-            desc = row.get("col8", "").strip()
-            shc = row.get("col10", "").strip()
-            route = row.get("col11", "").replace(" ", "").replace("-", "")
+        if re.match(r"^[A-Z]{3}\d{5}[A-Z]{2}$", line):
+            current_uld = f"ULD/{line}"
+            in_bulk = False
+            continue
 
-            if not pcs or not weight or not route:
-                continue
+        match = awb_regex.match(line)
+        if match:
+            prefix, awb_number, pcs_raw, weight_raw, desc, org, dest = match.groups()
+            awb = f"{prefix}{awb_number}"
+            awb_counter[awb] += 1
 
-            pcs_left, pcs_right = pcs.split("/") if "/" in pcs else (pcs, "")
-            try:
-                weight_val = float(weight.split("/")[0]) if "/" in weight else float(weight)
-            except ValueError:
-                continue
+            pcs_left, pcs_right = pcs_raw.split("/") if "/" in pcs_raw else (pcs_raw, "")
+            weight_val = float(weight_raw)
             mc = round(weight_val * 0.006, 2)
+            piece_type = "S" if awb_counter[awb] > 1 else "T"
 
-            if desc.upper() == shc.upper():
-                desc = shc
+            formatted = f"{prefix}-{awb_number}{org}{dest}/{piece_type}{pcs_left}K{weight_val}MC{mc}"
+            if pcs_right:
+                formatted += f"T{pcs_right}"
+            formatted += f"/{desc}/{dest}"
 
-            piece_type = "S" if seen_aman[aman] else "T"
-            seen_aman[aman] += 1
-
-            formatted = f"{aman}{route}/"
-            if piece_type == "S":
-                formatted += f"S{pcs_left}K{weight_val:.2f}MC{mc:.2f}"
-                if pcs_right:
-                    formatted += f"T{pcs_right}"
+            if in_bulk:
+                bulk_lines.append(formatted)
             else:
-                formatted += f"T{pcs_left}K{weight_val:.2f}MC{mc:.2f}"
+                if current_uld and current_uld not in uld_inserted:
+                    cargo_lines.append(current_uld)
+                    uld_inserted.add(current_uld)
+                cargo_lines.append(formatted)
 
-            formatted += f"/{desc}/{shc}"
-
-            uld_blocks[current_uld].append(formatted)
-
-    for uld, lines in uld_blocks.items():
-        results.append(uld)
-        results.extend(lines)
-
-    return "\n".join(results)
+    doc.close()
+    return "\n".join(results + bulk_lines + cargo_lines)

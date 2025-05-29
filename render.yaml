@@ -2,8 +2,6 @@ services:
   - type: web
     name: ffm8-converter
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
-    envVars:
-      - key: PORT
-        value: 10000
+    buildCommand: ""
+    startCommand: gunicorn app:app
+    autoDeploy: true
